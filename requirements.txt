@@ -1,0 +1,23 @@
+# --- Core Server ---
+fastapi             # The web API framework
+uvicorn[standard]   # The server to run FastAPI
+python-multipart    # For handling file uploads (PDFs)
+
+# --- LangChain & RAG ---
+langchain           # The main framework
+langchain-openai    # For OpenAI models (or langchain-google-genai, etc.)
+langchain-community # For many integrations
+
+# --- Document Loading ---
+pypdf               # For loading and parsing PDF files
+
+# --- Vector Database ---
+faiss-cpu           # For a local vector store (lightweight)
+# OR
+qdrant-client       # If you use Qdrant
+
+# --- Embeddings ---
+sentence-transformers # For free, local embeddings
+
+# --- Utilities ---
+python-dotenv       # For loading API keys from .env file
