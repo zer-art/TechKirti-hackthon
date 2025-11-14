@@ -1,5 +1,6 @@
+// Switch to using FastAPI backend for storage and status computation.
 (function(){
-  const STORAGE_KEY = 'foodItems_v1';
+  const API_BASE = '/api';
   const ALERTED_KEY = 'foodAlerts_v1';
   const form = document.getElementById('addForm');
   const nameInput = document.getElementById('name');
@@ -11,14 +12,30 @@
   // set default date to today
   dateInput.value = new Date().toISOString().slice(0,10);
 
-  function loadItems(){
-    try{
-      return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-    }catch(e){
-      return [];
-    }
+  async function getItems(){
+    const res = await fetch(API_BASE + '/items');
+    if(!res.ok) return [];
+    return res.json();
   }
-  function saveItems(items){ localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); }
+
+  async function addItem(item){
+    const res = await fetch(API_BASE + '/items', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(item)
+    });
+    return res.ok ? res.json() : null;
+  }
+
+  async function deleteItem(id){
+    const res = await fetch(API_BASE + '/items/' + encodeURIComponent(id), {method:'DELETE'});
+    return res.ok;
+  }
+
+  async function clearAll(){
+    const res = await fetch(API_BASE + '/items', {method:'DELETE'});
+    return res.ok;
+  }
 
   function loadAlerted(){
     try { return JSON.parse(localStorage.getItem(ALERTED_KEY) || '[]'); }
@@ -26,47 +43,33 @@
   }
   function saveAlerted(list){ localStorage.setItem(ALERTED_KEY, JSON.stringify(list)); }
 
-  function addDays(date, days){
-    const d = new Date(date);
-    d.setDate(d.getDate() + Number(days));
-    return d;
-  }
-  function formatDate(d){
-    const dt = new Date(d);
-    return dt.toISOString().slice(0,10);
-  }
-  function daysBetween(a, b){
-    const msPerDay = 1000*60*60*24;
-    return Math.floor((new Date(a).setHours(0,0,0,0) - new Date(b).setHours(0,0,0,0)) / msPerDay);
-  }
-  function computeStatus(daysLeft){
-    if(daysLeft < 0) return {key:'expired', label:'Expired'};
-    if(daysLeft <= 3) return {key:'soon', label:'Use Soon'};
-    return {key:'fresh', label:'Fresh'};
+  function escapeHtml(s){
+    return String(s).replace(/[&<>\"']/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   }
 
-  function render(){
-    const items = loadItems();
+  async function render(){
+    const items = await getItems();
     itemsContainer.innerHTML = '';
-    if(items.length === 0){
+    if(!items || items.length === 0){
       itemsContainer.innerHTML = '<div class="meta">No items tracked yet.</div>';
       return;
     }
     items.forEach(it => {
-      const expiry = addDays(it.purchaseDate, it.shelfLife);
-      const daysLeft = daysBetween(expiry, new Date());
-      const status = computeStatus(daysLeft);
+      const expiry = it.expiry; // server-provided YYYY-MM-DD
+      const daysLeft = it.daysLeft;
+      const statusKey = it.status;
+      const statusLabel = it.statusLabel || (statusKey === 'soon' ? 'Use Soon' : (statusKey === 'expired' ? 'Expired' : 'Fresh'));
 
       const el = document.createElement('div');
       el.className = 'item';
       el.innerHTML = `
         <div class="col">
           <div><strong>${escapeHtml(it.name)}</strong></div>
-          <div class="meta">Purchased: ${formatDate(it.purchaseDate)}</div>
+          <div class="meta">Purchased: ${escapeHtml(it.purchaseDate)}</div>
         </div>
-        <div class="col meta">Shelf life: ${it.shelfLife} days</div>
-        <div class="col meta">Expiry: ${formatDate(expiry)}</div>
-        <div class="col"><span class="status ${status.key}">${status.label}</span>
+        <div class="col meta">Shelf life: ${escapeHtml(String(it.shelfLife))} days</div>
+        <div class="col meta">Expiry: ${escapeHtml(expiry)}</div>
+        <div class="col"><span class="status ${statusKey}">${escapeHtml(statusLabel)}</span>
           <span class="meta"> &nbsp;(${daysLeft >= 0 ? daysLeft + ' day(s) left' : Math.abs(daysLeft)+' day(s) ago'})</span>
         </div>
         <div>
@@ -78,44 +81,33 @@
 
     // attach delete handlers
     itemsContainer.querySelectorAll('.small-btn[data-id]').forEach(btn=>{
-      btn.addEventListener('click', (e)=>{
+      btn.addEventListener('click', async (e)=>{
         const id = btn.getAttribute('data-id');
-        const remaining = loadItems().filter(i => i.id !== id);
-        saveItems(remaining);
-        render();
+        await deleteItem(id);
+        await render();
       });
     });
   }
 
-  function escapeHtml(s){
-    return String(s).replace(/[&<>"']/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-  }
-
-  form.addEventListener('submit', (e)=>{
+  form.addEventListener('submit', async (e)=>{
     e.preventDefault();
     const name = nameInput.value.trim();
     const purchaseDate = dateInput.value;
     const shelfLife = Number(shelfInput.value);
     if(!name || !purchaseDate || isNaN(shelfLife)) return;
 
-    const items = loadItems();
-    const item = {
-      id: String(Date.now()) + '-' + Math.random().toString(36).slice(2,7),
-      name, purchaseDate, shelfLife
-    };
-    items.push(item);
-    saveItems(items);
+    await addItem({name, purchaseDate, shelfLife});
     form.reset();
     dateInput.value = new Date().toISOString().slice(0,10);
-    render();
+    await render();
     checkAlerts();
   });
 
-  clearAllBtn.addEventListener('click', ()=>{
+  clearAllBtn.addEventListener('click', async ()=>{
     if(!confirm('Clear all tracked items?')) return;
-    localStorage.removeItem(STORAGE_KEY);
+    await clearAll();
     localStorage.removeItem(ALERTED_KEY);
-    render();
+    await render();
   });
 
   // Alerts: request permission and notify for "Use Soon" items once
@@ -134,24 +126,21 @@
     }
   }
 
-  function checkAlerts(){
-    const items = loadItems();
+  async function checkAlerts(){
+    const items = await getItems();
     const alerted = loadAlerted();
     const now = new Date();
     items.forEach(it=>{
-      const expiry = addDays(it.purchaseDate, it.shelfLife);
-      const daysLeft = daysBetween(expiry, now);
-      if(daysLeft <= 3 && daysLeft >= 0){
-        // send one alert per item (if not already alerted)
+      const daysLeft = it.daysLeft;
+      if(it.status === 'soon'){
         if(!alerted.includes(it.id)){
-          notify('Expiring soon: ' + it.name, `Expires on ${formatDate(expiry)} (${daysLeft} day(s) left)`);
+          notify('Expiring soon: ' + it.name, `Expires on ${it.expiry} (${daysLeft} day(s) left)`);
           alerted.push(it.id);
         }
       }
-      if(daysLeft < 0){
-        // expired items can also be notified once
+      if(it.status === 'expired'){
         if(!alerted.includes(it.id + '_expired')){
-          notify('Expired: ' + it.name, `Expired on ${formatDate(expiry)}`);
+          notify('Expired: ' + it.name, `Expired on ${it.expiry}`);
           alerted.push(it.id + '_expired');
         }
       }
@@ -162,7 +151,6 @@
   // initial boot
   requestNotificationPermission();
   render();
-  // check alerts now and then (hourly)
   checkAlerts();
   setInterval(checkAlerts, 1000 * 60 * 60);
 
