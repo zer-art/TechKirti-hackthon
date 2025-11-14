@@ -1,11 +1,43 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Food Stability Planner</title>
+  <link rel="stylesheet" href="/Users/pawan/Developer/TechKirti-hackthon/static/style.css" />
 </head>
 <body>
-    
+  <main class="container">
+    <h1>Food Stability Planner</h1>
+
+    <form id="addForm" class="form">
+      <label>
+        Item name
+        <input id="name" type="text" required />
+      </label>
+
+      <label>
+        Purchase date
+        <input id="purchaseDate" type="date" required />
+      </label>
+
+      <label>
+        Shelf life (days)
+        <input id="shelfLife" type="number" min="0" required />
+      </label>
+
+      <div class="form-actions">
+        <button type="submit">Add Item</button>
+        <button id="clearAll" type="button" class="danger">Clear all</button>
+      </div>
+    </form>
+
+    <section>
+      <h2>Tracked Items</h2>
+      <div id="itemsContainer" class="items"></div>
+    </section>
+  </main>
+
+  <script src="index.js"></script>
 </body>
 </html>
